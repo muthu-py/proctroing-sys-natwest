@@ -1,11 +1,40 @@
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, File, UploadFile, Form, HTTPException
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse,JSONResponse
 from fastapi.staticfiles import StaticFiles
+from pathlib import Path
+from video_detect import detect_speech
+import datetime
 import uvicorn
 import json
 from face.Facepresence_simple import SimpleFacePresence
 
 app = FastAPI()
+
+SAVE_DIR = Path("uploads")
+SAVE_DIR.mkdir(exist_ok=True)
+
+@app.post("/upload_audio")
+async def upload_audio(file: UploadFile = File(...)):
+    try:
+        # Generate unique filename
+        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+        ext = Path(file.filename).suffix
+        save_path = SAVE_DIR / f"{timestamp}{ext}"
+
+        # Save file to disk
+        with open(save_path, "wb") as f:
+            f.write(await file.read())
+
+        # Detect speech
+        speech_detected = detect_speech(save_path)  # returns True/False
+        print(speech_detected)
+        return JSONResponse({
+            "speech": speech_detected,
+            "saved_as": str(save_path)
+        })
+
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
 
 # Serve static files (HTML, JS)
 app.mount("/static", StaticFiles(directory="static"), name="static")
