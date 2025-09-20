@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Webcam Stream with Face Detection</title>
+</head>
+<body>
+    <h2>Webcam Capture with Face Detection</h2>
+    <video id="video" width="640" height="480" autoplay></video>
+    <canvas id="canvas" width="640" height="480"></canvas>
+    <div id="status">Initializing...</div>
+    
+    <script>
+        const video = document.getElementById('video');
+        const canvas = document.getElementById('canvas');
+        const status = document.getElementById('status');
+        let websocket = null;
+        let isStreaming = false;
+
+        // Initialize WebSocket connection
+        function initWebSocket() {
+            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            const wsUrl = `${protocol}//${window.location.host}/ws`;
+            
+            websocket = new WebSocket(wsUrl);
+            
+            websocket.onopen = function() {
+                status.textContent = 'Connected to server';
+                console.log('WebSocket connected');
+            };
+            
+            websocket.onmessage = function(event) {
+                const response = JSON.parse(event.data);
+                updateStatus(response);
+            };
+            
+            websocket.onclose = function() {
+                status.textContent = 'Disconnected from server';
+                console.log('WebSocket disconnected');
+            };
+            
+            websocket.onerror = function(error) {
+                status.textContent = 'WebSocket error occurred';
+                console.error('WebSocket error:', error);
+            };
+        }
+
+        // Update status display
+        function updateStatus(response) {
+            const faceCount = response.face_count;
+            const flag = response.flag;
+            
+            if (flag) {
+                status.innerHTML = `Alert: ${flag.event}<br>Face count: ${faceCount}<br>Time: ${new Date(flag.timestamp).toLocaleTimeString()}`;
+            } else {
+                status.innerHTML = `Normal: ${faceCount} face(s) detected`;
+            }
+        }
+
+        // Capture frame and send to server
+        function captureAndSend() {
+            if (!websocket || websocket.readyState !== WebSocket.OPEN) {
+                return;
+            }
+
+            const ctx = canvas.getContext('2d');
+            const width = video.videoWidth;
+            const height = video.videoHeight;
+            
+            if (width === 0 || height === 0) {
+                return;
+            }
+
+            // Set canvas size
+            canvas.width = width;
+            canvas.height = height;
+            
+            // Draw mirrored video frame to canvas
+            ctx.save();
+            ctx.translate(width, 0);
+            ctx.scale(-1, 1);
+            ctx.drawImage(video, 0, 0, width, height);
+            ctx.restore();
+            
+            // Convert canvas to base64
+            const imageData = canvas.toDataURL('image/jpeg', 0.8);
+            const base64Data = imageData.split(',')[1];
+            
+            // Send frame data to server
+            const frameData = {
+                image: base64Data,
+                timestamp: new Date().toISOString()
+            };
+            
+            websocket.send(JSON.stringify(frameData));
+        }
+
+        // Request webcam access and start streaming
+        navigator.mediaDevices.getUserMedia({ 
+            video: { 
+                width: { ideal: 640 }, 
+                height: { ideal: 480 } 
+            }, 
+            audio: false 
+        })
+            .then(stream => {
+                video.srcObject = stream;
+            video.onloadedmetadata = () => {
+                status.textContent = 'Camera ready, connecting to server...';
+                initWebSocket();
+                
+                // Start capturing frames every 500ms
+                setInterval(() => {
+                    if (isStreaming) {
+                        captureAndSend();
+                    }
+                }, 500);
+            };
+            
+            video.onplay = () => {
+                isStreaming = true;
+                status.textContent = 'Streaming started';
+            };
+        })
+        .catch(err => {
+            status.textContent = 'Error accessing webcam: ' + err.message;
+            console.error("Error accessing webcam: ", err);
+        });
+
+        // Clean up on page unload
+        window.addEventListener('beforeunload', () => {
+            if (websocket) {
+                websocket.close();
+            }
+        });
+    </script>
+</body>
+</html>
