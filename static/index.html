@@ -1,162 +1,203 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <title>Webcam Stream with Face Detection</title>
+  <meta charset="UTF-8">
+  <title>Webcam & Speech Detection</title>
 </head>
 <body>
+  <h1>Webcam & Speech Detection</h1>
+
+  <!-- Webcam Section -->
+  <section>
     <h2>Webcam Capture with Face Detection</h2>
     <div style="margin-bottom: 10px;">
-        <button id="resetBtn" style="padding: 8px 16px; background: #dc3545; color: white; border: none; border-radius: 4px; cursor: pointer;">
-            Reset Photos & Start Over
-        </button>
+      <button id="resetBtn" style="padding: 8px 16px; background: #dc3545; color: white; border: none; border-radius: 4px; cursor: pointer;">
+        Reset Photos & Start Over
+      </button>
     </div>
     <video id="video" width="640" height="480" autoplay></video>
     <canvas id="canvas" width="640" height="480"></canvas>
-    <div id="status">Initializing...</div>
-    
-    <script>
-        const video = document.getElementById('video');
-        const canvas = document.getElementById('canvas');
-        const status = document.getElementById('status');
-        const resetBtn = document.getElementById('resetBtn');
-        let websocket = null;
-        let isStreaming = false;
+    <div id="videoStatus">Initializing...</div>
+  </section>
 
-        // Initialize WebSocket connection
-        function initWebSocket() {
-            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-            const wsUrl = `${protocol}//${window.location.host}/ws`;
-            
-            websocket = new WebSocket(wsUrl);
-            
-            websocket.onopen = function() {
-                status.textContent = 'Connected to server';
-                console.log('WebSocket connected');
-            };
-            
-            websocket.onmessage = function(event) {
-                const response = JSON.parse(event.data);
-                updateStatus(response);
-            };
-            
-            websocket.onclose = function() {
-                status.textContent = 'Disconnected from server';
-                console.log('WebSocket disconnected');
-            };
-            
-            websocket.onerror = function(error) {
-                status.textContent = 'WebSocket error occurred';
-                console.error('WebSocket error:', error);
-            };
+  <hr>
+
+  <!-- Speech Section -->
+  <section>
+    <h2>Live Speech Detection</h2>
+    <p id="audioStatus">Initializing microphone...</p>
+    <pre id="result"></pre>
+  </section>
+
+  <script>
+    /* ------------------- Webcam + Face Detection ------------------- */
+    const video = document.getElementById('video');
+    const canvas = document.getElementById('canvas');
+    const videoStatus = document.getElementById('videoStatus');
+    const resetBtn = document.getElementById('resetBtn');
+    let websocket = null;
+    let isStreaming = false;
+
+    function initWebSocket() {
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const wsUrl = `${protocol}//${window.location.host}/ws`;
+
+      websocket = new WebSocket(wsUrl);
+
+      websocket.onopen = function() {
+        videoStatus.textContent = 'Connected to server';
+      };
+
+      websocket.onmessage = function(event) {
+        const response = JSON.parse(event.data);
+        updateStatus(response);
+      };
+
+      websocket.onclose = function() {
+        videoStatus.textContent = 'Disconnected from server';
+      };
+
+      websocket.onerror = function() {
+        videoStatus.textContent = 'WebSocket error occurred';
+      };
+    }
+
+    function updateStatus(response) {
+      const faceCount = response.face_count;
+      const flag = response.flag;
+
+      if (flag) {
+        videoStatus.innerHTML = `Alert: ${flag.event}<br>Face count: ${faceCount}<br>Time: ${new Date(flag.timestamp).toLocaleTimeString()}`;
+      } else {
+        videoStatus.innerHTML = `Normal: ${faceCount} face(s) detected`;
+      }
+    }
+
+    function captureAndSend() {
+      if (!websocket || websocket.readyState !== WebSocket.OPEN) return;
+
+      const ctx = canvas.getContext('2d');
+      const width = video.videoWidth;
+      const height = video.videoHeight;
+
+      if (width === 0 || height === 0) return;
+
+      canvas.width = width;
+      canvas.height = height;
+
+      ctx.save();
+      ctx.translate(width, 0);
+      ctx.scale(-1, 1);
+      ctx.drawImage(video, 0, 0, width, height);
+      ctx.restore();
+
+      const imageData = canvas.toDataURL('image/jpeg', 0.8);
+      const base64Data = imageData.split(',')[1];
+
+      websocket.send(JSON.stringify({
+        image: base64Data,
+        timestamp: new Date().toISOString()
+      }));
+    }
+
+    // Camera setup
+    navigator.mediaDevices.getUserMedia({
+      video: { width: { ideal: 640 }, height: { ideal: 480 } },
+      audio: false
+    })
+    .then(stream => {
+      video.srcObject = stream;
+      video.onloadedmetadata = () => {
+        videoStatus.textContent = 'Camera ready, connecting to server...';
+        initWebSocket();
+
+        setInterval(() => {
+          if (isStreaming) captureAndSend();
+        }, 500);
+      };
+
+      video.onplay = () => {
+        isStreaming = true;
+        videoStatus.textContent = 'Streaming started';
+      };
+    })
+    .catch(err => {
+      videoStatus.textContent = 'Error accessing webcam: ' + err.message;
+    });
+
+    resetBtn.addEventListener('click', async () => {
+      if (confirm('Are you sure you want to reset and start over?')) {
+        try {
+          const response = await fetch('/reset', { method: 'POST' });
+          const result = await response.json();
+          if (result.success) {
+            window.location.href = '/capture';
+          } else {
+            alert('Failed to reset photos');
+          }
+        } catch (error) {
+          alert('Error resetting photos');
         }
+      }
+    });
 
-        // Update status display
-        function updateStatus(response) {
-            const faceCount = response.face_count;
-            const flag = response.flag;
-            
-            if (flag) {
-                status.innerHTML = `Alert: ${flag.event}<br>Face count: ${faceCount}<br>Time: ${new Date(flag.timestamp).toLocaleTimeString()}`;
-            } else {
-                status.innerHTML = `Normal: ${faceCount} face(s) detected`;
-            }
-        }
+    window.addEventListener('beforeunload', () => {
+      if (websocket) websocket.close();
+    });
 
-        // Capture frame and send to server
-        function captureAndSend() {
-            if (!websocket || websocket.readyState !== WebSocket.OPEN) {
-                return;
-            }
+    /* ------------------- Live Speech Detection ------------------- */
+    const audioStatus = document.getElementById("audioStatus");
+    const resultEl = document.getElementById("result");
 
-            const ctx = canvas.getContext('2d');
-            const width = video.videoWidth;
-            const height = video.videoHeight;
-            
-            if (width === 0 || height === 0) {
-                return;
-            }
+    let mediaRecorder;
+    let chunks = [];
+    const CHUNK_DURATION = 5000;
 
-            // Set canvas size
-            canvas.width = width;
-            canvas.height = height;
-            
-            // Draw mirrored video frame to canvas
-            ctx.save();
-            ctx.translate(width, 0);
-            ctx.scale(-1, 1);
-            ctx.drawImage(video, 0, 0, width, height);
-            ctx.restore();
-            
-            // Convert canvas to base64
-            const imageData = canvas.toDataURL('image/jpeg', 0.8);
-            const base64Data = imageData.split(',')[1];
-            
-            // Send frame data to server
-            const frameData = {
-                image: base64Data,
-                timestamp: new Date().toISOString()
-            };
-            
-            websocket.send(JSON.stringify(frameData));
-        }
+    async function initMicrophone() {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        mediaRecorder = new MediaRecorder(stream);
+        audioStatus.textContent = "Microphone access granted, streaming...";
 
-        // Request webcam access and start streaming
-        navigator.mediaDevices.getUserMedia({ 
-            video: { 
-                width: { ideal: 640 }, 
-                height: { ideal: 480 } 
-            }, 
-            audio: false 
-        })
-            .then(stream => {
-                video.srcObject = stream;
-            video.onloadedmetadata = () => {
-                status.textContent = 'Camera ready, connecting to server...';
-                initWebSocket();
-                
-                // Start capturing frames every 500ms
-                setInterval(() => {
-                    if (isStreaming) {
-                        captureAndSend();
-                    }
-                }, 500);
-            };
-            
-            video.onplay = () => {
-                isStreaming = true;
-                status.textContent = 'Streaming started';
-            };
-        })
-        .catch(err => {
-            status.textContent = 'Error accessing webcam: ' + err.message;
-            console.error("Error accessing webcam: ", err);
-        });
+        mediaRecorder.ondataavailable = (e) => {
+          if (e.data.size > 0) chunks.push(e.data);
+        };
 
-        // Reset button handler
-        resetBtn.addEventListener('click', async () => {
-            if (confirm('Are you sure you want to reset and start over? This will clear all uploaded photos.')) {
-                try {
-                    const response = await fetch('/reset', { method: 'POST' });
-                    const result = await response.json();
-                    
-                    if (result.success) {
-                        window.location.href = '/capture';
-                    } else {
-                        alert('Failed to reset photos');
-                    }
-                } catch (error) {
-                    console.error('Reset error:', error);
-                    alert('Error resetting photos');
-                }
-            }
-        });
+        mediaRecorder.onstop = async () => {
+          if (chunks.length === 0) return;
 
-        // Clean up on page unload
-        window.addEventListener('beforeunload', () => {
-            if (websocket) {
-                websocket.close();
-            }
-        });
-    </script>
+          const audioBlob = new Blob(chunks, { type: "audio/webm" });
+          chunks = [];
+
+          const formData = new FormData();
+          formData.append("file", audioBlob, "chunk.webm");
+
+          try {
+            const res = await fetch("http://localhost:8000/upload_audio", {
+              method: "POST",
+              body: formData,
+            });
+            const data = await res.json();
+            resultEl.textContent = JSON.stringify(data, null, 2);
+          } catch {
+            resultEl.textContent = "Error uploading chunk.";
+          }
+
+          mediaRecorder.start();
+          setTimeout(() => mediaRecorder.stop(), CHUNK_DURATION);
+        };
+
+        // Start first cycle
+        mediaRecorder.start();
+        setTimeout(() => mediaRecorder.stop(), CHUNK_DURATION);
+
+      } catch (err) {
+        audioStatus.textContent = "Could not access microphone: " + err.message;
+      }
+    }
+
+    // auto-run mic on page load
+    window.onload = initMicrophone;
+  </script>
 </body>
 </html>
