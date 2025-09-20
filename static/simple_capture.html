@@ -1,0 +1,176 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Capture Reference Photo</title>
+  <style>
+    body { font-family: Inter, system-ui, -apple-system, sans-serif; margin: 20px; color:#111 }
+    .row { display:flex; gap:16px; align-items:center; flex-wrap:wrap; }
+    video { width: 480px; height: 360px; background:#000; border-radius:8px; box-shadow:0 6px 18px rgba(0,0,0,.08) }
+    .controls { display:flex; gap:8px; flex-direction:column; }
+    button { padding:10px 14px; border-radius:8px; border:1px solid #ddd; background:#fff; cursor:pointer }
+    button.primary { background:#0b63d6; color:#fff; border-color:transparent }
+    button:disabled { opacity:.5; cursor:not-allowed }
+    .thumb { width:200px; height:150px; object-fit:cover; border-radius:6px; border:1px solid #eee; margin-top:12px; }
+    .meta { margin-top:8px; color:#444; font-size:0.95rem }
+    .counter { font-weight:700 }
+    .hint { color:#666; font-size:.9rem }
+  </style>
+</head>
+<body>
+  <h2>Capture Reference Photo for Face Verification</h2>
+
+  <div class="row">
+    <video id="video" autoplay playsinline></video>
+
+    <div class="controls">
+      <div>
+        <button id="snapBtn">Take Reference Photo</button>
+        <button id="resetBtn">Reset</button>
+      </div>
+
+      <div style="margin-top:6px;">
+        <button id="uploadBtn" class="primary" disabled>Upload Reference Photo</button>
+      </div>
+
+      <div class="meta">
+        <div class="hint">Reference photo: <span id="count" class="counter">0</span></div>
+        <div class="hint">Required: <strong>1 photo</strong></div>
+        <div style="margin-top:8px;color:#666;font-size:.88rem;">
+          Upload endpoint: <code>/upload</code> (POST, multipart/form-data)
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="preview"></div>
+
+  <!-- hidden canvas to capture frames -->
+  <canvas id="captureCanvas" style="display:none;"></canvas>
+
+  <script>
+    (function(){
+      const video = document.getElementById('video');
+      const snapBtn = document.getElementById('snapBtn');
+      const uploadBtn = document.getElementById('uploadBtn');
+      const resetBtn = document.getElementById('resetBtn');
+      const preview = document.getElementById('preview');
+      const captureCanvas = document.getElementById('captureCanvas');
+      const countEl = document.getElementById('count');
+
+      let photoBlob = null;
+
+      // Start webcam
+      async function initCamera() {
+        try {
+          const stream = await navigator.mediaDevices.getUserMedia({
+            video: { width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false
+          });
+          video.srcObject = stream;
+          await video.play();
+        } catch (err) {
+          alert('Could not access camera: ' + err.message);
+          console.error(err);
+        }
+      }
+
+      // Capture frame -> Blob (jpeg)
+      function captureFrame() {
+        const w = video.videoWidth || 640;
+        const h = video.videoHeight || 480;
+        captureCanvas.width = w;
+        captureCanvas.height = h;
+        const ctx = captureCanvas.getContext('2d');
+        ctx.drawImage(video, 0, 0, w, h);
+
+        return new Promise(resolve => {
+          captureCanvas.toBlob(blob => {
+            resolve(blob);
+          }, 'image/jpeg', 0.85); // quality
+        });
+      }
+
+      function updateUI() {
+        if (photoBlob) {
+          const img = document.createElement('img');
+          img.className = 'thumb';
+          img.src = URL.createObjectURL(photoBlob);
+          img.title = 'Reference Photo';
+          preview.innerHTML = '';
+          preview.appendChild(img);
+          countEl.textContent = '1';
+          uploadBtn.disabled = false;
+        } else {
+          preview.innerHTML = '';
+          countEl.textContent = '0';
+          uploadBtn.disabled = true;
+        }
+      }
+
+      snapBtn.addEventListener('click', async () => {
+        snapBtn.disabled = true;
+        try {
+          photoBlob = await captureFrame();
+          updateUI();
+        } catch (err) {
+          console.error('capture error', err);
+        } finally {
+          snapBtn.disabled = false;
+        }
+      });
+
+      resetBtn.addEventListener('click', () => {
+        photoBlob = null;
+        updateUI();
+      });
+
+      // Upload handler: sends to /upload as multipart/form-data
+      uploadBtn.addEventListener('click', async () => {
+        if (!photoBlob) {
+          alert('Please take a reference photo first.');
+          return;
+        }
+
+        uploadBtn.disabled = true;
+        uploadBtn.textContent = 'Uploading…';
+
+        const form = new FormData();
+        form.append('photo', photoBlob, 'reference_photo.jpg');
+        form.append('ts', new Date().toISOString());
+        form.append('device', navigator.userAgent);
+
+        try {
+          const res = await fetch('/upload', {
+            method: 'POST',
+            body: form,
+          });
+
+          if (!res.ok) {
+            const text = await res.text();
+            throw new Error('Upload failed: ' + res.status + ' ' + text);
+          }
+
+          const json = await res.json().catch(() => null);
+          console.log('Upload successful', json);
+          alert('Reference photo uploaded successfully! Redirecting to face verification...');
+          
+          // Redirect to main page after successful upload
+          setTimeout(() => {
+            window.location.href = '/';
+          }, 1500);
+        } catch (err) {
+          console.error(err);
+          alert('Upload error: ' + err.message);
+        } finally {
+          uploadBtn.disabled = false;
+          uploadBtn.textContent = 'Upload Reference Photo';
+        }
+      });
+
+      // initialize camera on load
+      initCamera();
+    })();
+  </script>
+</body>
+</html>

@@ -5,6 +5,11 @@
 </head>
 <body>
     <h2>Webcam Capture with Face Detection</h2>
+    <div style="margin-bottom: 10px;">
+        <button id="resetBtn" style="padding: 8px 16px; background: #dc3545; color: white; border: none; border-radius: 4px; cursor: pointer;">
+            Reset Photos & Start Over
+        </button>
+    </div>
     <video id="video" width="640" height="480" autoplay></video>
     <canvas id="canvas" width="640" height="480"></canvas>
     <div id="status">Initializing...</div>
@@ -13,6 +18,7 @@
         const video = document.getElementById('video');
         const canvas = document.getElementById('canvas');
         const status = document.getElementById('status');
+        const resetBtn = document.getElementById('resetBtn');
         let websocket = null;
         let isStreaming = false;
 
@@ -124,6 +130,25 @@
         .catch(err => {
             status.textContent = 'Error accessing webcam: ' + err.message;
             console.error("Error accessing webcam: ", err);
+        });
+
+        // Reset button handler
+        resetBtn.addEventListener('click', async () => {
+            if (confirm('Are you sure you want to reset and start over? This will clear all uploaded photos.')) {
+                try {
+                    const response = await fetch('/reset', { method: 'POST' });
+                    const result = await response.json();
+                    
+                    if (result.success) {
+                        window.location.href = '/capture';
+                    } else {
+                        alert('Failed to reset photos');
+                    }
+                } catch (error) {
+                    console.error('Reset error:', error);
+                    alert('Error resetting photos');
+                }
+            }
         });
 
         // Clean up on page unload

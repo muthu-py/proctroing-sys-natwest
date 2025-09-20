@@ -1,0 +1,34 @@
+# DeepFace Proctoring System Requirements
+
+# Core FastAPI dependencies
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
+python-multipart==0.0.6
+
+# Computer Vision and Image Processing
+opencv-python==4.8.1.78
+numpy==1.24.3
+Pillow==10.0.1
+
+# DeepFace and Face Recognition
+deepface==0.0.79
+tensorflow==2.13.0
+keras==2.13.1
+
+# MediaPipe for face detection
+mediapipe==0.10.7
+
+# Machine Learning and Similarity
+scikit-learn==1.3.2
+
+# Additional DeepFace dependencies
+mtcnn==0.1.1
+retinaface==0.0.13
+dlib==19.24.2
+
+# Optional: For better performance
+# tensorflow-gpu==2.13.0  # Uncomment if you have GPU support
+
+# Development and debugging
+matplotlib==3.7.2
+seaborn==0.12.2
