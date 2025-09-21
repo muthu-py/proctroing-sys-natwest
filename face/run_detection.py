@@ -23,9 +23,11 @@ yolo_model = YOLO('yolov8n.pt')
 
 # --- Load Your Trained Cheating Detection Model ---
 try:
+    print(1)
     cheating_model = joblib.load('cheating_detection_model.joblib')
     print("✅ Cheating detection model loaded successfully.")
 except FileNotFoundError:
+    print(2)
     print("❌ FATAL ERROR: 'cheating_detection_model.joblib' not found.")
     print("Please make sure the trained model file is in the same folder as this script.")
     exit()

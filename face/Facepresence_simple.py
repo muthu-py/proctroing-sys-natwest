@@ -7,6 +7,13 @@ from datetime import datetime
 from deepface import DeepFace
 import time
 
+import pandas as pd
+import joblib
+import os
+
+
+from face.run_detection import extract_features_from_frame, cheating_model, MODEL_FEATURES
+
 class SimpleFacePresence:
     def __init__(self, min_detection_confidence=0.5):
         self.mp_face_detection = mp.solutions.face_detection
@@ -74,6 +81,7 @@ class SimpleFacePresence:
                 "timestamp": datetime.now().isoformat()
             }
         elif face_count == 1 and self.reference_photo is not None:
+
             # When exactly 1 face is detected, check for face verification every 2 seconds
             if self.should_verify_face():
                 try:
@@ -113,6 +121,37 @@ class SimpleFacePresence:
                             "distance": distance,
                             "timestamp": datetime.now().isoformat()
                         }
+                    else:
+                        # Check for cheating behavior
+                        try:
+                            features_dict = extract_features_from_frame(frame)
+                
+                            if features_dict:
+                                # print("DEBUG >>> Features being sent to model:", features_dict) # You can re-enable this for debugging
+                                
+                                live_features_df = pd.DataFrame([features_dict])
+                                live_features_df = live_features_df[MODEL_FEATURES]
+                                
+                                for col in ['head_pose', 'gaze_direction']:
+                                    live_features_df[col] = live_features_df[col].astype('category')
+
+                                prediction = cheating_model.predict(live_features_df)[0]
+
+                                if prediction == 1:
+                                    print("Prediction: 1 (Cheat)")
+                                    flag = {
+                                        "event": "cheating_detected",
+                                        "face_count": face_count,
+                                        "timestamp": datetime.now().isoformat()
+                                    }
+                                else:
+                                    print("Prediction: 0 (Normal)")
+
+                            else:
+                                print("Could not extract features from the frame.")
+
+                        except Exception as e:
+                            print(f"Cheating detection error: {e}")
                     
                     print(f"DeepFace verification - Verified: {verified}, Similarity: {similarity:.4f}, Distance: {distance:.4f}")
                     

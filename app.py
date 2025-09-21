@@ -3,7 +3,6 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 import uvicorn
 import json
-from face import Facepresence
 from face.verify.Facepresence import FacePresence
 from face.verify.host import HostEmbedding
 
